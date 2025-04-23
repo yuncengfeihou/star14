@@ -40,7 +40,7 @@ import {
 
 
 // Define plugin folder name (important for consistency)
-const pluginName = 'star13'; // 保持文件夹名称一致
+const pluginName = 'star14'; // 保持文件夹名称一致
 
 // Initialize plugin settings if they don't exist
 if (!extension_settings[pluginName]) {

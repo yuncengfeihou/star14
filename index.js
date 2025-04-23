@@ -1372,18 +1372,57 @@ jQuery(async () => {
         restoreNormalChatUI(); // 确保加载时输入框可见，无返回按钮
 
         // --- Event Listeners ---
-        eventSource.on(event_types.CHAT_CHANGED, (newChatId) => { // <--- 修改：接收 newChatId
-            console.log(`${pluginName}: 聊天已更改，更新收藏图标...`);
+        eventSource.on(event_types.CHAT_CHANGED, (newChatId) => {
+            console.log(`${pluginName}: 聊天已更改，新 Chat ID: ${newChatId}`);
+
+            // 1. 处理从活动预览模式切换离开的逻辑 (恢复UI)
+            // 这个函数内部会检查 previewState.isActive
+            handleChatChangeForPreview(newChatId);
+
+            // 2. 确保新聊天的收藏夹元数据数组存在
+            // 放在这里，确保后续逻辑（如图标刷新）可以访问到元数据
             ensureFavoritesArrayExists();
-            // --- 新增：调用聊天切换处理函数 ---
-            handleChatChangeForPreview(newChatId); // <--- 新增调用
-            // ---
+
+            // 3. 新增：检查是否手动切换回了 *曾经* 的预览聊天
+            // (关键：只在非活动预览状态下执行此检查)
+            if (!previewState.isActive) {
+                const previewChatsMap = extension_settings[pluginName]?.previewChats;
+                // 确保 previewChatsMap 存在且有内容
+                if (previewChatsMap && Object.keys(previewChatsMap).length > 0) {
+                    // 获取所有已知的预览聊天 ID (映射的值)
+                    const knownPreviewChatIds = Object.values(previewChatsMap);
+
+                    // 检查当前切换到的 newChatId 是否在已知的预览聊天 ID 列表中
+                    if (knownPreviewChatIds.includes(newChatId)) {
+                        console.log(`${pluginName}: 检测到用户手动切换回之前的预览聊天 (${newChatId})，准备显示提示。`);
+
+                        // 显示提示信息给用户
+                        toastr.info(
+                            `您当前查看的聊天 "${newChatId}" 是一个用于收藏预览的记录，可能只包含部分消息。`, // 提示内容
+                            '进入收藏预览记录', // 提示标题
+                            {
+                                timeOut: 8000,              // 基础显示时间 8 秒
+                                extendedTimeOut: 3000,      // 悬停时延长 3 秒
+                                preventDuplicates: true,    // 防止因快速切换重复弹出
+                                positionClass: 'toast-top-center' // 让提示在顶部中间显示 (可选, 默认右上角)
+                            }
+                        );
+                    }
+                }
+            } else {
+                console.log(`${pluginName}: 当前处于活动预览状态 (isActive: true)，跳过“手动切换回预览聊天”的检查。`);
+            }
+
+            // 4. 延迟刷新聊天界面中的收藏图标状态
+            // 放在最后，确保聊天内容加载和状态检查都完成后再更新UI
             setTimeout(() => {
-                addFavoriteIconsToMessages();
-                refreshFavoriteIconsInView();
-            }, 150);
+                console.log(`${pluginName}: CHAT_CHANGED 后延迟执行图标刷新 (Chat ID: ${newChatId})`);
+                addFavoriteIconsToMessages(); // 确保新加载的消息（如果有）有图标结构
+                refreshFavoriteIconsInView(); // 根据当前聊天的元数据更新图标的 solid/regular 状态
+            }, 150); // 150ms 延迟，给 DOM 更新留出时间
         });
 
+        // --- 其他事件监听器 (保持不变) ---
         eventSource.on(event_types.MESSAGE_DELETED, (deletedMessageIndex) => {
             const deletedMessageId = String(deletedMessageIndex);
             console.log(`${pluginName}: 检测到消息删除事件, 索引: ${deletedMessageIndex}`);
@@ -1394,43 +1433,53 @@ jQuery(async () => {
                 console.log(`${pluginName}: 消息索引 ${deletedMessageIndex} (ID: ${deletedMessageId}) 被删除，移除对应的收藏项`);
                 chatMetadata.favorites.splice(favIndex, 1);
                 saveMetadataDebounced();
+                // 如果收藏夹弹窗是打开的，刷新它
                 if (favoritesPopup && favoritesPopup.dlg && favoritesPopup.dlg.hasAttribute('open')) {
+                    // 重置到第一页可能不是最佳体验，但可以确保用户看到更新后的列表
                     currentPage = 1;
                     updateFavoritesPopup();
                 }
             } else {
                  console.log(`${pluginName}: 未找到引用已删除消息索引 ${deletedMessageIndex} (ID: ${deletedMessageId}) 的收藏项`);
             }
+             // 删除消息后，也需要刷新当前聊天视图中的图标状态
              setTimeout(refreshFavoriteIconsInView, 100);
         });
 
         const handleNewMessage = () => {
+             // 新消息到达或发送后，需要确保新消息有图标结构
              setTimeout(() => {
                  addFavoriteIconsToMessages();
+                 // 不需要 refreshFavoriteIconsInView，因为新消息默认不是收藏状态
              }, 150);
         };
         eventSource.on(event_types.MESSAGE_RECEIVED, handleNewMessage);
         eventSource.on(event_types.MESSAGE_SENT, handleNewMessage);
+
+        // 消息滑动或更新后，需要刷新图标状态（可能滑动到了已收藏的消息）
         eventSource.on(event_types.MESSAGE_SWIPED, () => {
             setTimeout(refreshFavoriteIconsInView, 150);
         });
         eventSource.on(event_types.MESSAGE_UPDATED, () => {
              setTimeout(refreshFavoriteIconsInView, 150);
         });
+
+        // 加载更多历史消息后，需要给新加载的消息添加图标结构并刷新状态
         eventSource.on(event_types.MORE_MESSAGES_LOADED, () => {
              console.log(`${pluginName}: 加载了更多消息，更新图标...`);
              setTimeout(() => {
-                 addFavoriteIconsToMessages();
-                 refreshFavoriteIconsInView();
+                 addFavoriteIconsToMessages(); // 添加结构
+                 refreshFavoriteIconsInView(); // 更新状态
              }, 150);
         });
 
-        // MutationObserver (unchanged)
+        // --- MutationObserver (保持不变) ---
         const chatObserver = new MutationObserver((mutations) => {
             let needsIconAddition = false;
             for (const mutation of mutations) {
                 if (mutation.type === 'childList' && mutation.addedNodes.length) {
                     mutation.addedNodes.forEach(node => {
+                        // 检查新增节点本身是否是消息，或者其子节点中是否包含消息
                         if (node.nodeType === 1 && (node.classList.contains('mes') || node.querySelector('.mes'))) {
                             needsIconAddition = true;
                         }
@@ -1438,21 +1487,22 @@ jQuery(async () => {
                 }
             }
             if (needsIconAddition) {
-                 setTimeout(addFavoriteIconsToMessages, 200);
+                 // 监听到 DOM 变化（可能有新消息渲染），延迟添加图标结构
+                 setTimeout(addFavoriteIconsToMessages, 200); // 稍长延迟确保渲染完成
             }
         });
         const chatElement = document.getElementById('chat');
         if (chatElement) {
             chatObserver.observe(chatElement, {
-                childList: true,
-                subtree: true
+                childList: true, // 监视直接子节点的添加/删除
+                subtree: true    // 监视所有后代节点的添加/删除
             });
              console.log(`${pluginName}: MutationObserver 已启动，监视 #chat 的变化`);
         } else {
              console.error(`${pluginName}: 未找到 #chat 元素，无法启动 MutationObserver`);
         }
 
-        console.log(`${pluginName}: 插件加载完成! (已应用预览UI修改)`);
+        console.log(`${pluginName}: 插件加载完成! (已应用预览UI修改和聊天切换提示)`);
     } catch (error) {
         console.error(`${pluginName}: 初始化过程中出错:`, error);
     }

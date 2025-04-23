@@ -747,11 +747,11 @@ function restoreNormalChatUI() {
 
 // --- 新增：触发返回导航的函数 ---
 async function triggerReturnNavigation() {
-    console.log(`${pluginName}: triggerReturnNavigation - Return button clicked.`);
+    console.log(`${pluginName}: triggerReturnNavigation - 返回按钮被点击。`);
     if (!previewState.originalContext) {
-        console.error(`${pluginName}: triggerReturnNavigation - Original context not found! Cannot return.`);
+        console.error(`${pluginName}: triggerReturnNavigation - 未找到原始上下文！无法返回。`);
         toastr.error('无法找到原始聊天上下文，无法返回。');
-        // 即使无法导航，也尝试恢复UI
+        // 即使无法导航，也尝试恢复UI并重置状态
         restoreNormalChatUI();
         previewState.isActive = false;
         previewState.originalContext = null;
@@ -760,35 +760,54 @@ async function triggerReturnNavigation() {
     }
 
     const { characterId, groupId, chatId } = previewState.originalContext;
-    console.log(`${pluginName}: triggerReturnNavigation - Returning to context:`, previewState.originalContext);
-
-    // 清理原始上下文，防止重复点击或其他问题
-    // previewState.originalContext = null; // 移动到 CHAT_CHANGED 处理
+    console.log(`${pluginName}: triggerReturnNavigation - 准备返回至上下文:`, previewState.originalContext);
 
     try {
+        // 显示“正在返回”的提示
         toastr.info('正在返回原聊天...');
+
+        let navigationSuccess = false; // 标记导航是否成功
+
         if (groupId) {
-            // 对于群聊聊天，需要群聊ID和聊天ID
-            console.log(`${pluginName}: Navigating back to Group Chat: groupId=${groupId}, chatId=${chatId}`);
+            // 对于群聊聊天
+            console.log(`${pluginName}: 导航返回至群组聊天: groupId=${groupId}, chatId=${chatId}`);
             await openGroupChat(groupId, chatId);
-        } else if (characterId !== undefined) { // 确保 characterId 存在 (即使是 null 或 0)
-            // 对于角色聊天，只需要聊天ID (文件名)
-             console.log(`${pluginName}: Navigating back to Character Chat: characterId=${characterId}, chatId=${chatId}`);
+            console.log(`${pluginName}: openGroupChat 调用完成 (groupId: ${groupId}, chatId: ${chatId})`);
+            navigationSuccess = true; // 标记成功
+            // --- 新增：返回成功提示 ---
+            toastr.success('已成功返回原群组聊天！', '返回成功', { timeOut: 2000 }); // 显示 2 秒
+
+        } else if (characterId !== undefined) {
+            // 对于角色聊天 (包括 characterId 为 null 或 0 的情况)
+            console.log(`${pluginName}: 导航返回至角色聊天: characterId=${characterId}, chatId=${chatId}`);
+            // 注意：openCharacterChat 只需要 chatId (文件名)
             await openCharacterChat(chatId);
+            console.log(`${pluginName}: openCharacterChat 调用完成 (chatId: ${chatId})`);
+            navigationSuccess = true; // 标记成功
+            // --- 新增：返回成功提示 ---
+            toastr.success('已成功返回原角色聊天！', '返回成功', { timeOut: 2000 }); // 显示 2 秒
+
         } else {
-            console.error(`${pluginName}: triggerReturnNavigation - Invalid original context. Cannot determine navigation type.`);
+            // 无效的原始上下文
+            console.error(`${pluginName}: triggerReturnNavigation - 无效的原始上下文。无法确定导航类型。`);
             toastr.error('无法确定原始聊天类型，无法返回。');
-            restoreNormalChatUI(); // 尝试恢复 UI
+            // 尝试恢复 UI 并重置状态
+            restoreNormalChatUI();
             previewState.isActive = false;
+            previewState.originalContext = null;
+            previewState.previewChatId = null;
         }
-        // 导航成功后，CHAT_CHANGED 事件会触发，那里的处理器会清理UI和状态
+
+        // 导航成功后，CHAT_CHANGED 事件会触发后续的 UI 清理 (handleChatChangeForPreview)
+        // 我们在这里只负责导航本身和成功提示。
+
     } catch (error) {
-        console.error(`${pluginName}: triggerReturnNavigation - Error during navigation back:`, error);
-        toastr.error(`返回原聊天时出错: ${error.message}`);
+        console.error(`${pluginName}: triggerReturnNavigation - 导航返回时出错:`, error);
+        toastr.error(`返回原聊天时出错: ${error.message || '未知错误'}`);
         // 即使导航失败，也尝试恢复UI并重置状态
         restoreNormalChatUI();
         previewState.isActive = false;
-        previewState.originalContext = null; // 清理状态
+        previewState.originalContext = null;
         previewState.previewChatId = null;
     }
 }

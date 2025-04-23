@@ -1401,7 +1401,7 @@ jQuery(async () => {
                             `注意：该聊天"${newChatId}"为【收藏聊天器】插件预览的聊天，仅仅只做预览收藏消息使用，该聊天可以删除，但请勿在该聊天发送任何消息，因为该聊天的记录都会在每次<预览>前清空！`,
                             '进入收藏预览聊天', // 提示标题
                             {
-                                timeOut: 8000,              // 基础显示时间 8 秒
+                                timeOut: 6500,              // 基础显示时间 6.5 秒
                                 extendedTimeOut: 3000,      // 悬停时延长 3 秒
                                 preventDuplicates: true,    // 防止因快速切换重复弹出
                                 positionClass: 'toast-top-center' // 让提示在顶部中间显示 (可选, 默认右上角)
